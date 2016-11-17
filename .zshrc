@@ -1,6 +1,12 @@
 # This file is sourced by non-interactive and interactive zsh login shells.
 # In an interactive shell, this is sourced before .zlogin.
 
+###################
+# CONFIGURE THESE #
+###################
+export NORMAL_USER=michael
+export ZSH_CACHE_DIR="$(readlink -f ~/.zsh)"
+
 # Init plugins.
 source ~/.zsh/init.zsh
 
@@ -77,13 +83,13 @@ function git_branch() {
 
 # Get the branch name of a path.
 git_branch_name() {
-        TARGET="$PWD"
-        if git_branch "$TARGET"
-        then
-                echo "`git rev-parse --abbrev-ref HEAD 2>/dev/null`"
-        else
-                echo ""
-        fi
+    TARGET="$PWD"
+    if git_branch "$TARGET"
+    then
+        echo "`git rev-parse --abbrev-ref HEAD 2>/dev/null`"
+    else
+        echo ""
+    fi
 }
 
 ############
@@ -126,6 +132,26 @@ bindkey -v
 # Auto report program time statistics for programs that take longer than 10 seconds to run.
 REPORTTIME=10
 
+##############
+# Git Prompt #
+##############
+GIT_PROMPT_EXECUTABLE="haskell"
+source /home/michael/.bin/zsh-git-prompt/zshrc.sh
+
+# Configure Git Zsh Prompt
+ZSH_THEME_GIT_PROMPT_PREFIX=""
+ZSH_THEME_GIT_PROMPT_SUFFIX=""
+ZSH_THEME_GIT_PROMPT_SEPARATOR="|"
+ZSH_THEME_GIT_PROMPT_BRANCH="%{$fg_bold[magenta]%}"
+ZSH_THEME_GIT_PROMPT_STAGED="%{$fg[red]%}%{•%G%}"
+ZSH_THEME_GIT_PROMPT_CONFLICTS="%{$fg[red]%}%{✖%G%}"
+ZSH_THEME_GIT_PROMPT_CHANGED="%{$fg[blue]%}%{+%G%}"
+ZSH_THEME_GIT_PROMPT_BEHIND="%{↓%G%}"
+ZSH_THEME_GIT_PROMPT_AHEAD="%{↑%G%}"
+ZSH_THEME_GIT_PROMPT_UNTRACKED="%{…%G%}"
+ZSH_THEME_GIT_PROMPT_CLEAN="%{$fg_bold[green]%}%{✔%G%}"
+GIT_PROMPT='%b%f$(git_super_status)'
+
 ##########
 # Prompt #
 ##########
@@ -146,6 +172,13 @@ export PS_VI_NORMAL="$PS_OPEN%B%F{yellow}NORMAL$PS_CLOSE"
 # The string we want printed for insert mode.
 export PS_VI_INSERT=""
 
+# these don't really change between zsh sessions
+# show username if its not the default
+SHOW_USER=
+if [[ $(whoami) != $NORMAL_USER ]]; then
+    SHOW_USER=true
+fi
+
 # Renders the prompt, gets called whenever the keymap changes (i.e. change from
 # insert to normal mode, or vice versa), or when the prompt is asked to be
 # re-rendered.
@@ -158,23 +191,27 @@ function prompt-init {
     # Holds the tokens to eventually render.
     local tokens
 
-    # Always have username token.
-    tokens+=(green:'%n')
+    # show username if its not the default
+    if [[ $SHOW_USER ]]; then
+        tokens+=(green:'%n')
+    fi
 
-    # Always have tty path rendered.
-    tokens+=(yellow:'%l')
+    # show hostname if its not the default
+    if [ -n "$SSH_CLIENT" -o -n "$SSH_TTY" ]; then
+        tokens+=(yellow:'%m')
+    fi
 
     # Always render top-level directory.
-    tokens+=(blue:'%1~')
+    tokens+=(cyan:'%1~')
 
     # If a program returned an error code, inform the user
     if [[ "$ret_status" -ne "0" ]]; then
-        tokens+=(yellow:"✗: $ret_status")
+        tokens+=(yellow:"✖ $ret_status")
     fi
 
     # If we are in a git repo, have git branch token.
     if git_branch "$PWD"; then
-        tokens+=(white:"$(git_branch_name $PWD)")
+        tokens+=(white:"${GIT_PROMPT}%B%F")
     fi
 
     # Reset prompt string.
@@ -189,22 +226,22 @@ function prompt-init {
     # For every token, render the token.
     for i in $tokens; do
 
-	# Extract the color of the token.
-    local token_color=$(echo $i | cut -f1 -d:)
+        # Extract the color of the token.
+        local token_color=$(echo $i | cut -f1 -d:)
 
-	# Extract the content of the token.
-    local content=$(echo $i | cut -f2- -d:)
+        # Extract the content of the token.
+        local content=$(echo $i | cut -f2- -d:)
 
-	# Strips color codes from the token content.
-    local zero='%([BSUbfksu]|([FB]|){*})'
+        # Strips color codes from the token content.
+        local zero='%([BSUbfksu]|([FB]|){*})'
 
-	# Construct the new token.
-    local new_token="$PS_OPEN%b%F{$token_color}$content$PS_CLOSE "
+        # Construct the new token.
+        local new_token="$PS_OPEN%B%F{$token_color}$content$PS_CLOSE "
 
-	# Count the width of the new token, ignoring non-rendered characters.
-	local length=${#${(S%%)new_token//$~zero/}}
+        # Count the width of the new token, ignoring non-rendered characters.
+        local length=${#${(S%%)new_token//$~zero/}}
 
-	# If the top-length has not been overrun, render the new token.
+        # If the top-length has not been overrun, render the new token.
         if [[ $(( $running_length + $length )) -lt $top_length ]]; then
             PS1="$PS1$new_token"
             running_length=$(( $running_length + $length ))
@@ -212,21 +249,22 @@ function prompt-init {
     done
 
     # Export the new prompts.
-    export PS1="$PS1%B%F{red}%#%b%f%k "
+    export PS_PROMPT='%B%F{red}$%b%f%k'
+    export PS1="$PS1${PS_PROMPT} "
     export RPS1="${${KEYMAP/vicmd/$PS_VI_NORMAL}/(main|viins)/$PS_VI_INSERT}"
 
     # Re-render the new prompt.
-	if zle; then
-		zle reset-prompt
-	fi
+    if zle; then
+        zle reset-prompt
+    fi
 }
 
 function zle-line-init {
-	prompt-init
+    prompt-init
 }
 
 function zle-keymap-select {
-	prompt-init
+    prompt-init
 }
 
 zstyle ':completion:*' completer _oldlist _complete
@@ -243,19 +281,49 @@ function TRAPWINCH() {
 #########
 # Alias #
 #########
-
+alias ls='ls -F --color=auto --group-directories-first'
+alias open='xdg-open'
 alias please='sudo $(fc -ln -1)'
+alias http='python3 -m http.server'
+alias cde='cd /home/michael/cde'
+alias again='until $(fc -ln -1); do :; done'
+alias clbin="curl -F 'clbin=<-' https://clbin.com"
+alias sudo='sudo -E ' # keep environment & check for alias
+alias vi=nvim
+
+#############
+# Functions #
+#############
+function targz() {
+    tar -zcvf "${1}.tar.gz" "${1}"
+}
+
+function watch() {
+    while :; do
+        inotifywait -e close_write "$1"
+        RUN=$(echo $@ | cut -d " " -f2-)
+        echo "Running $RUN..."
+        eval "$RUN"
+    done
+}
+
+function latex_watch() {
+    FILE="$1"
+    watch "$FILE" pdflatex -halt-on-error "$FILE"
+}
+
+#############
+# Variables #
+#############
+export EDITOR=nvim
 
 #############
 # RAM Setup #
 #############
-
 mkdir -p ~/RAM/.desktop
 mkdir -p ~/RAM/.downloads
 
 ###############
 # Autosuggest #
 ###############
-
-# Use right arrow to trigger autosuggest.
-AUTOSUGGESTION_ACCEPT_RIGHT_ARROW=1
+# use the defaults
